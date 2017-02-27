@@ -1,0 +1,52 @@
+import com.atlassian.jira.component.ComponentAccessor
+import org.apache.log4j.Category
+import com.atlassian.jira.issue.Issue;
+ 
+def Category log = Category.getInstance("com.onresolve.jira.groovy.PostFunction");
+log.setLevel(org.apache.log4j.Level.DEBUG);
+ 
+// Get the current issue key
+Issue issueKey = issue
+def id = issueKey.getId()
+ 
+// Get the current logged in user
+def user = ComponentAccessor.getJiraAuthenticationContext().getUser().name
+return user
+ 
+// Get a manager to handle the copying of attachments
+def attachmentManager = ComponentAccessor.getAttachmentManager()
+ 
+// Get the default attachment path from its manager
+def attachmentPathManager = ComponentAccessor.getAttachmentPathManager().attachmentPath.toString()
+ 
+// Get the current date
+def today = new Date()
+ 
+// Get the last attachments file properties needed by the attachment manager to copy it.
+ 
+def fileName = issueKey.attachments.last()?.filename.toString()
+def fileType = issueKey.attachments.last()?.mimetype.toString()
+ 
+// Construct the key of the next Subtask
+def currentIssue = issue.toString()
+ 
+// Extract the project key from the issue
+def projectKey = currentIssue.replaceAll("[^A-Z]", "").toString();
+ 
+// Get the ID that jira has used to store the last attachment
+def fileId = issueKey.attachments.last()?.id
+ 
+// Construct the file path of the attachment to copy
+def path = attachmentPathManager + "/" + projectKey + "/" + currentIssue + "/" + fileId + "/"
+ 
+// Construct a pointer to the file that will be copied
+File filePath = new File(path.toString())
+ 
+// Specify the issue to copy the attachment to here. This could be defined in code.
+Issue subIssue = ComponentAccessor.getIssueManager().getIssueObject("KDP-100")
+ 
+// If there is a previous attachment
+if (fileName != null) {
+// Attach the file to the new issue
+    attachmentManager.createAttachmentCopySourceFile(filePath, fileName, fileType, user, subIssue, null, today)
+}

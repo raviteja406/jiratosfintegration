@@ -1,0 +1,57 @@
+import com.atlassian.jira.issue.CustomFieldManager;
+import com.atlassian.jira.issue.fields.CustomField;
+import org.apache.commons.codec.binary.Base64;
+import java.net.*;
+import groovy.json.JsonSlurper;
+
+def user = "JIRA_API";                                                      // SNOW UserID
+def passwd = "5h1n30N4ever!";                                               // SNOW Password
+def requestMethod = "POST";                                                 // Method Type
+def URLParam = "https://sfsf.service-now.com/api/now/table/incident";       // SNOW Incident table URL
+def query = "{\"short_description\":\"Test post request from JIRA INT\"}";  // Data to POST to SNOW
+URLConnection connection;                                                   // URL Connection object
+
+try {
+    URL url;
+    url = new URL(URLParam);
+    def authString = user + ":" + passwd;
+    byte[] authEncBytes = Base64.encodeBase64(authString.getBytes());
+    String authStringEnc = new String(authEncBytes);
+    connection = url.openConnection();
+    connection.setRequestProperty("Authorization", "Basic " + authStringEnc);
+    connection.setRequestMethod(requestMethod);
+    connection.setRequestProperty("Content-Type", "application/json");
+    connection.setRequestProperty("Accept", "application/json");
+    connection.doOutput = true
+    def writer = new OutputStreamWriter(connection.outputStream)
+    writer.write(query)
+    writer.flush()
+    writer.close()
+    connection.connect()
+} catch (Exception e) {
+    //ToDo:
+}
+if (connection.getResponseCode() == 201) {
+    String nextLine;
+    InputStreamReader inStream = new InputStreamReader(
+            connection.getInputStream());
+    BufferedReader buff = new BufferedReader(inStream);
+
+    // Extracting only Incident number
+    def json = new groovy.json.JsonBuilder()
+    def slurper = new JsonSlurper()
+    def result = slurper.parseText(buff.readLine())
+    return result.result.number
+	
+	// Extract complete set
+    /*while (true) {
+        nextLine = buff.readLine();
+        if (nextLine != null) {
+            return nextLine;
+        } else {
+            break;
+        }
+    }*/
+} else {
+    return connection.getResponseMessage();
+}

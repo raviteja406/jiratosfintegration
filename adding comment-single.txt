@@ -1,0 +1,65 @@
+import com.atlassian.mail.Email;
+import com.atlassian.mail.server.MailServerManager;
+import com.atlassian.mail.server.SMTPMailServer;
+import com.atlassian.jira.ComponentManager;
+import com.atlassian.jira.issue.fields.CustomField
+import com.atlassian.jira.issue.CustomFieldManager
+import com.atlassian.jira.issue.IssueManager
+import com.atlassian.jira.issue.Issue
+import com.atlassian.jira.component.ComponentAccessor
+import com.atlassian.jira.issue.util.DefaultIssueChangeHolder
+import com.atlassian.jira.issue.ModifiedValue
+import com.atlassian.jira.issue.customfields.manager.OptionsManager
+import com.atlassian.jira.issue.customfields.option.Option
+import com.atlassian.jira.issue.util.IssueChangeHolder
+
+import com.atlassian.jira.ComponentManager
+import com.atlassian.jira.issue.comments.CommentManager
+import com.opensymphony.workflow.WorkflowContext
+import org.apache.log4j.Category
+//
+//comment imports
+import com.atlassian.jira.issue.Issue;
+import com.atlassian.jira.ComponentManager
+import com.atlassian.jira.component.ComponentAccessor;
+import com.atlassian.jira.issue.comments.CommentManager
+
+String reqURL = "http://services.groupkt.com/state/get/IND/all"
+URL wikiReq = new URL(reqURL);
+
+Scanner scanner = new Scanner(wikiReq.openStream());
+String response= scanner.useDelimiter("\\Z").next();
+
+// Get a pointer to the issue
+Issue issueKey  = issue
+ 
+// Get the current logged in user
+def CurrentUser = ComponentAccessor.getJiraAuthenticationContext().getUser().displayName
+ 
+// Get access to the Jira comment manager
+CommentManager commentManager = ComponentAccessor.getCommentManager()
+	
+def comment = response
+
+// Check if the issue is not null
+if(issueKey){       
+    	// Create a comment on the issue
+        commentManager.create(issueKey, CurrentUser,comment, false)
+}
+
+-------------------------
+// adding basic auth
+def addr       = "https://myinstance.service-now.com/api/now/table/incident?sysparm_limit=10"
+def authString = "admin:admin".getBytes().encodeBase64().toString()
+
+def conn = addr.toURL().openConnection()
+conn.setRequestProperty( "Authorization", "Basic ${authString}" )
+if( conn.responseCode == 200 ) {
+  def feed = new XmlSlurper().parseText( conn.content.text )
+
+  // Work with the xml document
+
+} else{
+  println "Something bad happened."
+  println "${conn.responseCode}: ${conn.responseMessage}" 
+}

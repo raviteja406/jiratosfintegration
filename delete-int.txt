@@ -1,0 +1,34 @@
+import com.atlassian.jira.issue.CustomFieldManager;
+import com.atlassian.jira.issue.fields.CustomField;
+import org.apache.commons.codec.binary.Base64;
+import java.net.*;
+
+def user = "JIRA_API";                                                      			// SNOW UserID
+def passwd = "5h1n30N4ever!";                                               			// SNOW Password
+def requestMethod = "DELETE";                                                  			// Method Type
+def URLParam = "https://sfsf.service-now.com/api/now/table/incident/0ab12136db893a404418f5461d9619e8";         	// SNOW Incident table URL (update with 
+																												//"sys_id": "0ab12136db893a404418f5461d9619e8",
+def query = "{\"short_description\":\"Test INT2 from jira\"}";               			// Data to POST to SNOW
+URLConnection connection;                                                   			// URL Connection object
+
+try {
+    URL url;
+    url = new URL(URLParam);
+    def authString = user + ":" + passwd;
+    byte[] authEncBytes = Base64.encodeBase64(authString.getBytes());
+    String authStringEnc = new String(authEncBytes);
+    connection = url.openConnection();
+    connection.setRequestProperty("Authorization", "Basic " + authStringEnc);
+    connection.setRequestMethod(requestMethod);
+    connection.setRequestProperty("Content-Type", "application/json");
+    connection.setRequestProperty("Accept", "application/json");
+    connection.doOutput = true;
+    connection.connect();
+} catch (Exception e) {
+    //ToDo:
+}
+if (connection.getResponseCode() == 201) {
+    return connection.getResponseMessage();
+} else {
+    return connection.getResponseMessage();
+}

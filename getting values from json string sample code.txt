@@ -1,0 +1,16 @@
+import groovy.json.JsonSlurper;
+ 
+def json = new groovy.json.JsonBuilder()
+ 
+response = '{"Status": "Success", "Catalog": [{"RegCode": ["331949e92a304166b848889696f7192f", "45bb0f839a9c4cc0a017e4260f6d7bf4"], "BlockID": "696701bb39c04f4ca910963f985db37e"}], "CatalogID": "273c3f026dbc4f29b2dd8a69359da590"}'
+println "Chithra Groovy Compile"
+println response
+ 
+def slurper = new JsonSlurper()
+ 
+def result = slurper.parseText(response)
+ 
+println result.Catalog.RegCode
+ 
+a = [1,2,3,4]
+println a.size()

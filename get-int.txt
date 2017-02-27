@@ -1,0 +1,57 @@
+package com.onresolve.jira.groovy.canned.workflow.postfunctions
+
+import com.atlassian.jira.issue.CustomFieldManager;
+import com.atlassian.jira.issue.fields.CustomField;
+import org.apache.commons.codec.binary.Base64;
+import java.net.*;
+import groovy.json.JsonSlurper;
+
+def user = "JIRA_API";                                                        // SNOW UserID
+def passwd = "5h1n30N4ever!";                                                // SNOW Password
+def requestMethod = "GET";                                                  // Method Type
+//def URLParam = "https://sfsf.service-now.com/api/now/table/incident";      	// SNOW Incident table URL
+URLConnection connection;                                                   // URL Connection object
+
+def URLParam = "https://sfsf.service-now.com/api/now/table/incident/6e0b6136db0d3e408e5ef9231d961971";    // To Extract specific detail
+
+try {
+    URL url;
+    url = new URL(URLParam);
+    def authString = user + ":" + passwd;
+    byte[] authEncBytes = Base64.encodeBase64(authString.getBytes());
+    String authStringEnc = new String(authEncBytes);
+    connection = url.openConnection();
+    connection.setRequestProperty("Authorization", "Basic " + authStringEnc);
+    connection.setRequestMethod(requestMethod);
+    connection.setRequestProperty("Content-Type", "application/json");
+    connection.setRequestProperty("Accept", "application/json");
+    connection.connect();
+} catch (Exception e) {
+    //ToDo
+}
+if (connection.getResponseCode() == 200) {
+    String nextLine;
+    InputStreamReader inStream = new InputStreamReader(
+            connection.getInputStream());
+    BufferedReader buff = new BufferedReader(inStream);
+
+    // Extracting only Incident number
+    def json = new groovy.json.JsonBuilder()
+    def slurper = new JsonSlurper()
+    def result = slurper.parseText(buff.readLine())
+    return result.result.number
+
+    // Extract complete set for response
+    /*while (true){
+   
+           nextLine =buff.readLine();  
+           if (nextLine !=null){
+               return nextLine; 
+           }
+           else{
+              break;
+           } 
+         }*/
+} else {
+    return connection.getResponseMessage();
+}
