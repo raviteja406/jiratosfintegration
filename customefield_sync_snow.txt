@@ -1,0 +1,77 @@
+import com.atlassian.jira.component.ComponentAccessor
+import com.atlassian.jira.ComponentManager
+import com.atlassian.jira.issue.fields.CustomField;
+import com.atlassian.jira.issue.CustomFieldManager;
+import com.atlassian.jira.issue.Issue
+import com.atlassian.jira.issue.fields.CustomField
+import com.atlassian.jira.issue.ModifiedValue
+import com.atlassian.jira.issue.MutableIssue
+import com.atlassian.jira.issue.util.DefaultIssueChangeHolder
+import com.atlassian.jira.issue.util.IssueChangeHolder
+import com.opensymphony.workflow.InvalidInputException
+import org.apache.commons.codec.binary.Base64;
+import java.net.*;
+import groovy.json.JsonSlurper;
+
+def user = "JIRA_API";                                                        	// SNOW UserID
+def passwd = "5h1n30N4ever!";                                                	// SNOW Password
+def requestMethod = "GET";                                                  	// Method Type
+//def URLParam = "https://sfsf.service-now.com/api/now/table/incident";      	// SNOW Incident table URL
+URLConnection connection;                                                  	 	// URL Connection object
+
+Issue issueKey = issue;
+
+def URLParam = "https://sfsf.service-now.com/api/now/table/incident/6e0b6136db0d3e408e5ef9231d961971";    // To Extract specific detail
+
+try {
+    URL url;
+    url = new URL(URLParam);
+    def authString = user + ":" + passwd;
+    byte[] authEncBytes = Base64.encodeBase64(authString.getBytes());
+    String authStringEnc = new String(authEncBytes);
+    connection = url.openConnection();
+    connection.setRequestProperty("Authorization", "Basic " + authStringEnc);
+    connection.setRequestMethod(requestMethod);
+    connection.setRequestProperty("Content-Type", "application/json");
+    connection.setRequestProperty("Accept", "application/json");
+    connection.connect();
+} catch (Exception e) {
+    //ToDo
+}
+if (connection.getResponseCode() == 200) {
+    String nextLine;
+    InputStreamReader inStream = new InputStreamReader(connection.getInputStream());
+    BufferedReader buff = new BufferedReader(inStream);
+
+    // Extracting only Incident number
+    def json = new groovy.json.JsonBuilder()
+    def slurper = new JsonSlurper()
+    def result = slurper.parseText(buff.readLine())
+    
+    setCustomFields(result,issue)
+	
+} else {
+    return connection.getResponseMessage();
+}
+
+def setCustomFields(def result,def issue)
+{    
+	IssueChangeHolder changeHolder = new DefaultIssueChangeHolder();
+	
+	def snow_inc_id   = "customfield_18981";
+    def snow_etask_id = "customfield_18982";
+    def snow_sys_id   = "customfield_18983";
+    def snow_url 	  = "customfield_18984";
+    def snow_test_url = "https://sfsf.service-now.com/nav_to.do?uri=%2Fincident.do%3Fsys_id%3D838a52f6db4d3e408e5ef9231d9619cc%26sysparm_stack%3D%26sysparm_view%3D";
+    
+    def customFieldManager = ComponentAccessor.getCustomFieldManager()
+	def cf_snow_inc_id 	= customFieldManager.getCustomFieldObject(snow_inc_id);
+    def cf_snow_etask_id = customFieldManager.getCustomFieldObject(snow_etask_id);
+    def cf_snow_sys_id = customFieldManager.getCustomFieldObject(snow_sys_id);
+    def cf_snow_url = customFieldManager.getCustomFieldObject(snow_url);
+
+	cf_snow_inc_id.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_inc_id), result.result.number), changeHolder);
+    cf_snow_etask_id.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_etask_id), "ETASK123"), changeHolder);
+    cf_snow_sys_id.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_sys_id), result.result.sys_id), changeHolder);
+    cf_snow_url.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_url), snow_test_url), changeHolder);
+}
