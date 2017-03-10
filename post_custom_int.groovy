@@ -35,7 +35,7 @@ def sync_with_snow() {
     def user = "JIRA_API";                                                      //!< SNOW UserID
     def passwd = "5h1n30N4ever!";                                               //!< SNOW Password
     def requestMethod
-    def URLParam = "https://sfsf.service-now.com/api/now/table/incident/"
+    def URLParam = "https://sfsf.service-now.com/api/now/table/incident"
 
     if (!isIncidentCreated()) {
         requestMethod = "POST";                                                 //!< Method Type
@@ -43,7 +43,7 @@ def sync_with_snow() {
         requestMethod = "PUT"
         def customFieldManager = ComponentAccessor.getCustomFieldManager()
         def cf_snow_sys_id = customFieldManager.getCustomFieldObject("customfield_18983");
-        URLParam = URLParam + issue.getCustomFieldValue(cf_snow_sys_id)
+        URLParam = URLParam +"/"+issue.getCustomFieldValue(cf_snow_sys_id)
     }
     def query = "{\"short_description\":\"Test post request from JIRA INTEGRATION TEST\"}";  //!< Data to POST to SNOW
 
