@@ -9,3 +9,17 @@ Password: 5h1n30N4ever!
 play-around ticket 
 INC0010373
 838a52f6db4d3e408e5ef9231d9619cc
+
+import com.atlassian.jira.component.ComponentAccessor
+ 
+def changeHistoryManager = ComponentAccessor.getChangeHistoryManager()
+def changeItems = changeHistoryManager.getAllChangeItems(issue)
+ 
+if (changeItems?.size() > 0) {
+    def userUtil = ComponentAccessor.getUserUtil()
+    def userkey = changeItems.sort(false).last().getUserKey()
+    return userkey
+    userUtil.getUserByKey(userkey)
+} else {
+    null
+}
