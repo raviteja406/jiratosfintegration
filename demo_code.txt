@@ -24,14 +24,15 @@ init();
 
 def init() {
 
-    //Reading from properties file
+    //Reading from properties file    
     Properties props = new Properties()
     File propsFile = new File('/data/JIRA6/atlassian-jira-6.4.12/conf/jirasnowconfig.properties')
     props.load(propsFile.newDataInputStream())
 
     def log = Logger.getLogger(props.getProperty('LOG_FILE_PATH'))
     log.setLevel(Level.ERROR)
-    sync_with_snow(props)
+
+    sync_with_snow(props, getActionType())
 }
 
 /* <<<These API signatures will change>>>
@@ -40,35 +41,32 @@ def init() {
 *							with the details of JIRA ticket.
 */
 
-def sync_with_snow(def props) {
+def sync_with_snow(def props, def action) {
 
-    def requestMethod
-    def URLParam = props.getProperty('incidenturlparam');
-
-    if (!isIncidentCreated()) {
-        requestMethod = "POST";
-    } else {
-        requestMethod = "PUT"
-        def customFieldManager = ComponentAccessor.getCustomFieldManager()
-        def cf_snow_sys_id = customFieldManager.getCustomFieldObject("customfield_18983");
-        URLParam = URLParam + "/" + issue.getCustomFieldValue(cf_snow_sys_id)
-    }
-    def query = "{\"short_description\":\"Test post request from JIRA INTEGRATION TEST\"}";  //!< Data to POST to SNOW
-
+    def URLParam = props.getProperty('sn_etask_url')
     def user = props.getProperty('user');
     def passwd = props.getProperty('passwd');
 
-    URLConnection connection;                                                   //!< URL Connection object
+    URLConnection connection;
     def issue_id = issue;
     try {
         URL url;
         url = new URL(URLParam);
+        log.error "url"+url
         def authString = user + ":" + passwd;
         byte[] authEncBytes = Base64.encodeBase64(authString.getBytes());
         String authStringEnc = new String(authEncBytes);
         connection = url.openConnection();
         connection.setRequestProperty("Authorization", "Basic " + authStringEnc);
-        connection.setRequestMethod(requestMethod);
+
+        if (action == "SRCH") {
+            log.error "action - " + action
+            connection.setRequestMethod("GET");
+        } else {
+            log.error "action - " + action
+            connection.setRequestMethod("POST");
+        }
+
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setRequestProperty("Accept", "application/json");
         connection.doOutput = true
@@ -80,18 +78,26 @@ def sync_with_snow(def props) {
     } catch (Exception e) {
         log.error("JIRA-SNOW: ERROR: Unable to connect:" + e)
     }
-    if ((connection.getResponseCode().toString() == props.getProperty('CREATED'))) {
+    if ((connection.getResponseCode().toString() == props.getProperty('OK'))) {
 
         String nextLine;
         InputStreamReader inStream = new InputStreamReader(connection.getInputStream());
         BufferedReader buff = new BufferedReader(inStream);
-
         // Extracting details of SNOW response
         def slurper = new JsonSlurper()
         def result = slurper.parseText(buff.readLine())
+        log.error "Response  - " + result
 
-        sendAttachments(props, result)
-        setCustomFields(result, issue, props)
+		if( action == "CRT" ){
+			sendAttachments(props, result)			
+        	setCustomFields(result, issue, props)
+        }
+        
+        if( action == "SRCH" ){
+            sync_with_snow(props, "UPD")
+            sendAttachments(props, result)
+            setCustomFields(result, issue, props)
+        }
         //return connection.getResponseCode().toString()
     } else {
         log.error("JIRA-SNOW: ERROR: Response:" + connection.getResponseMessage())
@@ -113,25 +119,25 @@ def setCustomFields(def result, def issue, def props) {
 
     def snow_inc_id = "customfield_18981";
     def snow_etask_id = "customfield_18982";
-    def snow_sys_id = "customfield_18983";
-    def snow_url = "customfield_18984";
+    //def snow_sys_id = "customfield_18983";
+    //def snow_url = "customfield_18984";
 
-    def snow_base_url = props.getProperty('snow_base_url')
-    def incident_key = props.getProperty('deep_url_inc_key')
-    def sys_id = result.result.sys_id;
-    def snow_inc_url = "$snow_base_url$incident_key$sys_id".toString()
+    //def snow_base_url = props.getProperty('snow_base_url')
+    //def incident_key = props.getProperty('deep_url_inc_key')
+    //def sys_id = result.sys_id;
+    //def snow_inc_url = "$snow_base_url$incident_key$sys_id".toString()
 
     def customFieldManager = ComponentAccessor.getCustomFieldManager()
 
     def cf_snow_inc_id = customFieldManager.getCustomFieldObject(snow_inc_id);
     def cf_snow_etask_id = customFieldManager.getCustomFieldObject(snow_etask_id);
-    def cf_snow_sys_id = customFieldManager.getCustomFieldObject(snow_sys_id);
-    def cf_snow_url = customFieldManager.getCustomFieldObject(snow_url);
+    //def cf_snow_sys_id = customFieldManager.getCustomFieldObject(snow_sys_id);
+    //def cf_snow_url = customFieldManager.getCustomFieldObject(snow_url);
 
-    cf_snow_inc_id.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_inc_id), result.result.number), changeHolder);
-    cf_snow_etask_id.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_etask_id), "ETASK123"), changeHolder);
-    cf_snow_sys_id.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_sys_id), result.result.sys_id), changeHolder);
-    cf_snow_url.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_url), snow_inc_url), changeHolder);
+    cf_snow_inc_id.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_inc_id), result.inc_number), changeHolder);
+    cf_snow_etask_id.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_etask_id), result.number), changeHolder);
+    //cf_snow_sys_id.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_sys_id), result.sys_id), changeHolder);
+    //cf_snow_url.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_url), snow_inc_url), changeHolder);
 }
 
 /* <<<These API signatures will change>>>
@@ -143,27 +149,36 @@ def setCustomFields(def result, def issue, def props) {
 */
 
 def build_req(def issueKey) {
-    def priority = issueKey.getPriorityObject().getName()
-    def description = issueKey.getDescription();
 
+    def customFieldManager = ComponentAccessor.getCustomFieldManager()
+    def cf_snow_inc_id = customFieldManager.getCustomFieldObject("customfield_18981");
+    
+    
     def json = new JsonBuilder()
-    //def root = json jiraid: issueKey.getKey(), priority: priority, description: description
-    def root = json description: description
+    def root = json jira_id: issueKey.getKey(), description: issueKey.getDescription(), ticket_priority: issueKey.getPriorityObject().getName(), ActionType: getActionType(), summary: issueKey.getSummary(), project: issue.projectObject.getKey(), inc_number: issue.getCustomFieldValue(cf_snow_inc_id)
+    log.error "request message - " + json.toString()
     return json.toString()
 }
 
-def isIncidentCreated() {
-    boolean incCreated = false;
-    def snow_sys_id = "customfield_18983";
+def getActionType() {
+    def action_type
+    def sn_etask_sys_id = "customfield_18982"
+    def sn_inc_id = "customfield_18981"
 
     def customFieldManager = ComponentAccessor.getCustomFieldManager()
-    def cf_snow_sys_id = customFieldManager.getCustomFieldObject(snow_sys_id);
+    def cf_sn_etask_sys_id = customFieldManager.getCustomFieldObject(sn_etask_sys_id)
+    def cf_sn_inc_id = customFieldManager.getCustomFieldObject(sn_inc_id)
 
-    if (issue.getCustomFieldValue(cf_snow_sys_id)) {
-        return true;
-    } else {
-        return false;
-    }
+    if ((issue.getCustomFieldValue(cf_sn_etask_sys_id) == null) && (issue.getCustomFieldValue(cf_sn_inc_id) == null)) {
+        action_type = "CRT"
+    } else if ((issue.getCustomFieldValue(cf_sn_etask_sys_id) == null) && (issue.getCustomFieldValue(cf_sn_inc_id) != null)) {
+        action_type = "SRCH"
+    } else if ((issue.getCustomFieldValue(cf_sn_etask_sys_id) != null) && (issue.getCustomFieldValue(cf_sn_inc_id) != null)) {
+        action_type = "UPD"
+    } else
+        action_type = "INVALID"
+
+    return action_type
 }
 
 def sendAttachments(def props, def response) {
@@ -196,9 +211,9 @@ def sendAttachments(def props, def response) {
         if (file.exists()) {
             try {
                 URL url;
-                URLParam = props.getProperty('attachmenturlparam')
-                URLParam = URLParam + response.result.sys_id + "&file_name=" + attachments[i].getFilename()
-
+                URLParam = props.getProperty('sn_attachment_url')
+                URLParam = URLParam + response.sys_id + "&file_name=" + attachments[i].getFilename()
+                log.error "URL - " + URLParam
                 url = new URL(URLParam);
                 def authString = user + ":" + passwd;
                 byte[] authEncBytes = Base64.encodeBase64(authString.getBytes());
@@ -235,9 +250,10 @@ def sendAttachments(def props, def response) {
             } catch (Exception e) {
                 log.error "Exception while send" + e
             }
-        }
-        if (connection.getResponseCode() != props.getProperty('CREATED')) {
-            log.error "Error response from server for attachment" + connection.getResponseMessage()
+
+            if ((connection.getResponseCode().toString() != props.getProperty('CREATED'))) {
+                log.error "response on attachments " + connection.getResponseCode()
+            }
         }
     }
 }

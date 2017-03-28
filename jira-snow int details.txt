@@ -10,6 +10,7 @@ play-around ticket
 INC0010373
 838a52f6db4d3e408e5ef9231d9619cc
 
+//Toget the user key
 import com.atlassian.jira.component.ComponentAccessor
  
 def changeHistoryManager = ComponentAccessor.getChangeHistoryManager()
@@ -23,3 +24,25 @@ if (changeItems?.size() > 0) {
 } else {
     null
 }
+
+#########end point updates
+Hi All
+Here is the info we talked about
+
+Endpoint for etask for attachments:
+https://sfsf.service-now.com/api/now/table/u_external_task
+
+You should be able to take that and do what you need to do for attachments, let m know if you run into an issue.  The table name is: 
+u_external_task
+
+
+Endpoint for processor:
+
+https://sfsf.service-now.com/cf_jira.do
+
+Thanks
+adrienne
+
+incident number 19180
+status 19181
+------------------------

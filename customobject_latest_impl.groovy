@@ -31,7 +31,8 @@ def init() {
 
     def log = Logger.getLogger(props.getProperty('LOG_FILE_PATH'))
     log.setLevel(Level.ERROR)
-    sync_with_snow(props)
+
+	sync_with_snow(props, getActionType())
 }
 
 /* <<<These API signatures will change>>>
@@ -40,25 +41,13 @@ def init() {
 *							with the details of JIRA ticket.
 */
 
-def sync_with_snow(def props) {
+def sync_with_snow(def props, def action) {
 
-    def requestMethod
-    def URLParam = props.getProperty('incidenturlparam');
-
-    if (!isIncidentCreated()) {
-        requestMethod = "POST";
-    } else {
-        requestMethod = "PUT"
-        def customFieldManager = ComponentAccessor.getCustomFieldManager()
-        def cf_snow_sys_id = customFieldManager.getCustomFieldObject("customfield_18983");
-        URLParam = URLParam + "/" + issue.getCustomFieldValue(cf_snow_sys_id)
-    }
-    def query = "{\"short_description\":\"Test post request from JIRA INTEGRATION TEST\"}";  //!< Data to POST to SNOW
-
+    def URLParam = props.getProperty('incidenturlparam');   
     def user = props.getProperty('user');
     def passwd = props.getProperty('passwd');
-
-    URLConnection connection;                                                   //!< URL Connection object
+	
+    URLConnection connection;
     def issue_id = issue;
     try {
         URL url;
@@ -68,7 +57,12 @@ def sync_with_snow(def props) {
         String authStringEnc = new String(authEncBytes);
         connection = url.openConnection();
         connection.setRequestProperty("Authorization", "Basic " + authStringEnc);
-        connection.setRequestMethod(requestMethod);
+		
+        if( action == "SRCH")
+        	connection.setRequestMethod("GET");
+        else
+            connection.setRequestMethod("POST");
+        
         connection.setRequestProperty("Content-Type", "application/json");
         connection.setRequestProperty("Accept", "application/json");
         connection.doOutput = true
@@ -80,7 +74,7 @@ def sync_with_snow(def props) {
     } catch (Exception e) {
         log.error("JIRA-SNOW: ERROR: Unable to connect:" + e)
     }
-    if ((connection.getResponseCode().toString() == props.getProperty('CREATED'))) {
+    if ((connection.getResponseCode().toString() == props.getProperty('OK'))) {
 
         String nextLine;
         InputStreamReader inStream = new InputStreamReader(connection.getInputStream());
@@ -152,18 +146,26 @@ def build_req(def issueKey) {
     return json.toString()
 }
 
-def isIncidentCreated() {
-    boolean incCreated = false;
-    def snow_sys_id = "customfield_18983";
+def getActionType() {
+    def action_type
+    def sn_etask_sys_id = "customfield_18982"
+	def sn_inc_id = "customfield_18981"
 
     def customFieldManager = ComponentAccessor.getCustomFieldManager()
-    def cf_snow_sys_id = customFieldManager.getCustomFieldObject(snow_sys_id);
-
-    if (issue.getCustomFieldValue(cf_snow_sys_id)) {
-        return true;
-    } else {
-        return false;
-    }
+    def cf_sn_etask_sys_id = customFieldManager.getCustomFieldObject(sn_etask_sys_id)
+	def cf_sn_inc_id = customFieldManager.getCustomFieldObject(sn_inc_id)
+	
+    if ( ( issue.getCustomFieldValue(cf_sn_etask_sys_id) == null ) && ( issue.getCustomFieldValue(cf_sn_inc_id) == null ) ) {
+        action_type = "CRT"
+    } else if( ( issue.getCustomFieldValue(cf_sn_etask_sys_id) == null ) ) {
+        action_type = "SRCH"
+    }else if(( issue.getCustomFieldValue(cf_sn_etask_sys_id) != null ) && ( issue.getCustomFieldValue(cf_sn_inc_id) != null )){
+		action_type = "UPD"
+	}
+	else
+		action_type = "INVALID"
+	
+	return action_type
 }
 
 def sendAttachments(def props, def response) {
