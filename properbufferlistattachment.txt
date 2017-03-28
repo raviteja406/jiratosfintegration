@@ -14,7 +14,7 @@ import java.nio.charset.StandardCharsets
 
 def user = "JIRA_API";                                                                // SNOW UserID
 def passwd = "5h1n30N4ever!";                                                        // SNOW Password
-def URLParam = "https://sfsf.service-now.com/api/now/attachment/file?table_name=incident&table_sys_id=838a52f6db4d3e408e5ef9231d9619cc&file_name=samplejpeg.jpg"
+def URLParam = "https://sfsf.service-now.com/api/now/attachment/file?table_name=incident&table_sys_id=838a52f6db4d3e408e5ef9231d9619cc&file_name=attachment.jpg"
 URLConnection connection;
 
 // Get the current issue key
@@ -27,6 +27,7 @@ def attachmentManager = ComponentAccessor.getAttachmentManager()
 // Get the default attachment path from its manager
 def attachmentPathManager = ComponentAccessor.getAttachmentPathManager().attachmentPath.toString()
 def attachments = attachmentManager.getAttachments(issueKey) //attachments is list<attachments>
+
 FileInputStream fis;
 int size = 0;
 byte[] buffer;
@@ -37,6 +38,7 @@ DataOutputStream wr;
 for (int i = 0; i < attachments.size(); i++) {
     String filePath = PathUtils.joinPaths(ComponentAccessor.getAttachmentPathManager().getDefaultAttachmentPath(), issueKey.getProjectObject().getKey(), issue.getKey(), attachments[i].getId().toString());
     File file = new File(filePath);
+    //return file.getName();
     if (file.exists()) {        
         URL url;
         url = new URL(URLParam);
@@ -48,12 +50,20 @@ for (int i = 0; i < attachments.size(); i++) {
         connection.setRequestMethod("POST");
         connection.setDoOutput(true);
         connection.setDoInput(true);
-        connection.setRequestProperty("Content-Type", "image-jpeg");
+        
+        InputStream is = new BufferedInputStream(new FileInputStream(file));
+        def mimeType= connection.guessContentTypeFromStream(is);
+        is.close();
+        //return mimeType ;
+ 
+        connection.setRequestProperty("Content-Type", mimeType);
         connection.setRequestProperty("Accept", "application/json");
         connection.setRequestProperty("Content-Length", Integer.toString(str_encodeddata.toString().getBytes().length));
 
         buffer = new byte[file.length()];
         fis = new FileInputStream(file);
+
+		
 		int read;
         while((read = fis.read(buffer)) != -1 ){
             connection.getOutputStream().write(buffer,0,read);
@@ -62,7 +72,6 @@ for (int i = 0; i < attachments.size(); i++) {
 		encodeddata = Base64.encodeBase64(buffer);
         str_encodeddata = new String(buffer); 
         fis.close();
-        os.close();
         
         wr = new DataOutputStream(connection.getOutputStream());
         wr.writeBytes(str_encodeddata);        

@@ -3,7 +3,6 @@ import com.atlassian.jira.ComponentManager
 import com.atlassian.jira.issue.fields.CustomField;
 import com.atlassian.jira.issue.CustomFieldManager;
 import com.atlassian.jira.issue.Issue
-import com.atlassian.jira.issue.fields.CustomField
 import com.atlassian.jira.issue.ModifiedValue
 import com.atlassian.jira.issue.MutableIssue
 import com.atlassian.jira.issue.util.DefaultIssueChangeHolder
@@ -13,15 +12,26 @@ import org.apache.commons.codec.binary.Base64;
 import java.net.*;
 import groovy.json.JsonSlurper;
 import groovy.json.JsonBuilder;
-
-/*MS: Please remove redundant imports*/
-/*RT: Fixed: All the redundant fields are already removed as the code*/
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
+import org.apache.log4j.Category
+import org.apache.commons.io.IOUtils;
+import com.atlassian.jira.util.io.InputStreamConsumer;
+import com.atlassian.jira.util.PathUtils
+import java.nio.charset.StandardCharsets
 
 init();
 
 def init() {
-    //if (!isIncidentCreated())
-    sync_with_snow();
+
+    //Reading from properties file
+    Properties props = new Properties()
+    File propsFile = new File('/data/JIRA6/atlassian-jira-6.4.12/conf/jirasnowconfig.properties')
+    props.load(propsFile.newDataInputStream())
+
+    def log = Logger.getLogger(props.getProperty('LOG_FILE_PATH'))
+    log.setLevel(Level.ERROR)
+    sync_with_snow(props)
 }
 
 /* <<<These API signatures will change>>>
@@ -30,24 +40,23 @@ def init() {
 *							with the details of JIRA ticket.
 */
 
-def sync_with_snow() {
+def sync_with_snow(def props) {
 
-    def user = "JIRA_API";                                                      //!< SNOW UserID
-    def passwd = "5h1n30N4ever!";                                               //!< SNOW Password
     def requestMethod
-    def URLParam = "https://sfsf.service-now.com/api/now/table/incident"
+    def URLParam = props.getProperty('incidenturlparam');
 
     if (!isIncidentCreated()) {
-        requestMethod = "POST";                                                 //!< Method Type
+        requestMethod = "POST";
     } else {
         requestMethod = "PUT"
         def customFieldManager = ComponentAccessor.getCustomFieldManager()
         def cf_snow_sys_id = customFieldManager.getCustomFieldObject("customfield_18983");
-        URLParam = URLParam +"/"+issue.getCustomFieldValue(cf_snow_sys_id)
+        URLParam = URLParam + "/" + issue.getCustomFieldValue(cf_snow_sys_id)
     }
     def query = "{\"short_description\":\"Test post request from JIRA INTEGRATION TEST\"}";  //!< Data to POST to SNOW
 
-    /*MS: Please read all these Properties from a .Properties file. One suggestion is to use Groovy ConfigSlurper library*/
+    def user = props.getProperty('user');
+    def passwd = props.getProperty('passwd');
 
     URLConnection connection;                                                   //!< URL Connection object
     def issue_id = issue;
@@ -69,11 +78,10 @@ def sync_with_snow() {
         writer.close()
         connection.connect()
     } catch (Exception e) {
-        //ToDo:
-        /*MS: Let's look at writing it to a log file. Jira installations use Log4J and we should be able to access
-            and utilize it for writing any failure conditions */
+        log.error("JIRA-SNOW: ERROR: Unable to connect:" + e)
     }
-    if (connection.getResponseCode() == 201) {
+    if ((connection.getResponseCode().toString() == props.getProperty('CREATED'))) {
+
         String nextLine;
         InputStreamReader inStream = new InputStreamReader(connection.getInputStream());
         BufferedReader buff = new BufferedReader(inStream);
@@ -81,10 +89,13 @@ def sync_with_snow() {
         // Extracting details of SNOW response
         def slurper = new JsonSlurper()
         def result = slurper.parseText(buff.readLine())
-        setCustomFields(result, issue)
-        return connection.getResponseMessage(); /*MS: The calling function should do something with this return*/
+
+        sendAttachments(props, result)
+        setCustomFields(result, issue, props)
+        //return connection.getResponseCode().toString()
     } else {
-        return connection.getResponseMessage();  /*MS: The calling function should do something with this return*/
+        log.error("JIRA-SNOW: ERROR: Response:" + connection.getResponseMessage())
+        //return connection.getResponseCode().toString()
     }
 }
 
@@ -96,7 +107,7 @@ def sync_with_snow() {
 *					 issue: This Will be issue key for which response has to be updated.
 */
 
-def setCustomFields(def result, def issue) {
+def setCustomFields(def result, def issue, def props) {
 
     IssueChangeHolder changeHolder = new DefaultIssueChangeHolder();
 
@@ -105,20 +116,10 @@ def setCustomFields(def result, def issue) {
     def snow_sys_id = "customfield_18983";
     def snow_url = "customfield_18984";
 
-    /*MS: I confirmed that following deep-link URL does work:
-    https://sfsf.service-now.com/incident.do?sys_id=f629752adbb076408e5ef9231d961978
-    Concatenate: def SNIncidentURL = URL + 'incident.do?sys_id= + Sys_Id)
-    Sys_Id returned from SN in above format and SET(SNIncidentURL ) to a custom URL field in JIRA.
-    If User is already logged in the click takes him/her to the Incident detail page else to the login page.
-    */
-    /*RT: Fixed*/
-
-    def snow_base_url = "https://sfsf.service-now.com/"
-    def incident_key = "incident.do?sys_id="
+    def snow_base_url = props.getProperty('snow_base_url')
+    def incident_key = props.getProperty('deep_url_inc_key')
     def sys_id = result.result.sys_id;
     def snow_inc_url = "$snow_base_url$incident_key$sys_id".toString()
-
-    /*MS: Please read all these Properties from a .Properties file. One suggestion is to use Groovy ConfigSlurper library*/
 
     def customFieldManager = ComponentAccessor.getCustomFieldManager()
 
@@ -162,5 +163,81 @@ def isIncidentCreated() {
         return true;
     } else {
         return false;
+    }
+}
+
+def sendAttachments(def props, def response) {
+
+    def passwd = props.getProperty('passwd');
+    def user = props.getProperty('user');
+    log.error "sending attachments"
+    // Get the current issue key
+    Issue issueKey = issue
+    def id = issueKey.getId()
+
+    // Get a manager to handle the copying of attachments
+    def attachmentManager = ComponentAccessor.getAttachmentManager()
+
+    // Get the default attachment path from its manager
+    def attachmentPathManager = ComponentAccessor.getAttachmentPathManager().attachmentPath.toString()
+    def attachments = attachmentManager.getAttachments(issueKey) //attachments is list<attachments>
+
+    FileInputStream fis;
+    int size = 0;
+    byte[] buffer;
+    def encodeddata; //byte array
+    def str_encodeddata; //string
+    DataOutputStream wr;
+
+    for (int i = 0; i < attachments.size(); i++) {
+        String filePath = PathUtils.joinPaths(ComponentAccessor.getAttachmentPathManager().getDefaultAttachmentPath(), issueKey.getProjectObject().getKey(), issue.getKey(), attachments[i].getId().toString());
+        File file = new File(filePath);
+
+        if (file.exists()) {
+            try {
+                URL url;
+                URLParam = props.getProperty('attachmenturlparam')
+                URLParam = URLParam + response.result.sys_id + "&file_name=" + attachments[i].getFilename()
+
+                url = new URL(URLParam);
+                def authString = user + ":" + passwd;
+                byte[] authEncBytes = Base64.encodeBase64(authString.getBytes());
+                String authStringEnc = new String(authEncBytes);
+                connection = url.openConnection();
+                connection.setRequestProperty("Authorization", "Basic " + authStringEnc);
+                connection.setRequestMethod("POST");
+                connection.setDoOutput(true);
+                connection.setDoInput(true);
+
+                def mimeType = connection.guessContentTypeFromName(attachments[i].getFilename());
+
+                connection.setRequestProperty("Content-Type", mimeType);
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("Content-Length", Integer.toString(str_encodeddata.toString().getBytes().length));
+
+                buffer = new byte[file.length()];
+                fis = new FileInputStream(file);
+
+                int read;
+                while ((read = fis.read(buffer)) != -1) {
+                    connection.getOutputStream().write(buffer, 0, read);
+                }
+
+                encodeddata = Base64.encodeBase64(buffer);
+                str_encodeddata = new String(buffer);
+                fis.close();
+
+                wr = new DataOutputStream(connection.getOutputStream());
+                wr.writeBytes(str_encodeddata);
+                wr.flush();
+                wr.close();
+                connection.connect();
+            } catch (Exception e) {
+                log.error "Exception while send" + e
+            }
+        }
+        if (connection.getResponseCode() != props.getProperty('CREATED')) {
+            log.error "Error response from server for attachment" + connection.getResponseMessage()
+        }
     }
 }

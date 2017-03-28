@@ -1,0 +1,103 @@
+import com.atlassian.jira.component.ComponentAccessor
+import com.atlassian.jira.ComponentManager
+import com.atlassian.jira.issue.fields.CustomField;
+import com.atlassian.jira.issue.CustomFieldManager;
+import com.atlassian.jira.issue.comments.CommentManager
+import com.atlassian.jira.issue.Issue
+import com.atlassian.jira.issue.ModifiedValue
+import com.atlassian.jira.issue.MutableIssue
+import com.atlassian.jira.issue.util.DefaultIssueChangeHolder
+import com.atlassian.jira.issue.util.IssueChangeHolder
+import com.opensymphony.workflow.InvalidInputException
+import org.apache.commons.codec.binary.Base64;
+import java.net.*;
+import groovy.json.JsonSlurper;
+import groovy.json.JsonBuilder;
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
+import org.apache.log4j.Category
+import org.apache.commons.io.IOUtils;
+import com.atlassian.jira.util.io.InputStreamConsumer;
+import com.atlassian.jira.util.PathUtils
+import java.nio.charset.StandardCharsets
+
+
+
+init();
+
+def init() {
+
+    //Reading from properties file    
+    Properties props = new Properties()
+    File propsFile = new File('/data/JIRA6/atlassian-jira-6.4.12/conf/jirasnowconfig.properties')
+    props.load(propsFile.newDataInputStream())
+
+    def log = Logger.getLogger(props.getProperty('LOG_FILE_PATH'))
+    log.setLevel(Level.ERROR)
+
+    def sn_etask_sys_id = "customfield_18982"
+    def customFieldManager = ComponentAccessor.getCustomFieldManager()
+    def cf_sn_etask_sys_id = customFieldManager.getCustomFieldObject(sn_etask_sys_id)
+    
+    if( issue.getCustomFieldValue(cf_sn_etask_sys_id) )
+		sync_with_snow(props)
+}
+
+/* <<<These API signatures will change>>>
+*	create_snow_incident(): This API is responsible for establishing connection
+*							between JIRA and SNOW and create an incident in SNOW
+*							with the details of JIRA ticket.
+*/
+
+def sync_with_snow(def props) {
+
+    def URLParam = props.getProperty('sn_etask_url')
+    def user = props.getProperty('user');
+    def passwd = props.getProperty('passwd');
+
+    URLConnection connection;
+    def issue_id = issue;
+    try {
+        URL url;
+        url = new URL(URLParam);
+        def authString = user + ":" + passwd;
+        byte[] authEncBytes = Base64.encodeBase64(authString.getBytes());
+        String authStringEnc = new String(authEncBytes);
+        connection = url.openConnection();
+        connection.setRequestProperty("Authorization", "Basic " + authStringEnc);
+		connection.setRequestMethod("POST");
+        connection.setRequestProperty("Content-Type", "application/json");
+        connection.setRequestProperty("Accept", "application/json");
+        connection.doOutput = true
+        def writer = new OutputStreamWriter(connection.outputStream)
+        writer.write(build_req(issue_id));
+        writer.flush()
+        writer.close()
+        connection.connect()
+    } catch (Exception e) {
+        log.error("JIRA-SNOW: ERROR: Unable to connect:" + e)
+    }
+    if ((connection.getResponseCode().toString() == props.getProperty('OK'))) {
+
+        String nextLine;
+        InputStreamReader inStream = new InputStreamReader(connection.getInputStream());
+        BufferedReader buff = new BufferedReader(inStream);
+        // Extracting details of SNOW response
+        def slurper = new JsonSlurper()
+        def result = slurper.parseText(buff.readLine())
+        log.error "Response  - " + result
+    } else {
+        log.error("JIRA-SNOW: ERROR: Response:" + connection.getResponseMessage())
+    }
+}
+
+def build_req(def issueKey) {
+
+    def json = new JsonBuilder()        
+    CommentManager commentManager = ComponentAccessor.getCommentManager()
+    def comment = commentManager.getLastComment(issueKey).getBody()
+    
+    def root = json jira_id: issueKey.getKey(), ActionType: "UPD", comments: comment
+    log.error "request message - " + json.toString()
+    return json.toString()
+}
