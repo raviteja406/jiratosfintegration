@@ -41,7 +41,14 @@ def init() {
     def changeHistoryManager = ComponentAccessor.getChangeHistoryManager()
 	def changeItems = changeHistoryManager.getAllChangeItems(issue)
    
-	sync_with_snow(props, getActionType())
+	if (changeItems?.size() > 0) {
+    	def userUtil = ComponentAccessor.getUserUtil()
+    	def userkey = changeItems.sort(false).last().getUserKey()
+        if( userkey != "snintegration" )
+			sync_with_snow(props, getActionType())
+        else 
+            log.error "action not allowed for "+userkey
+    }
 }
 
 /* <<<These API signatures will change>>>
@@ -96,6 +103,7 @@ def sync_with_snow(def props, def action) {
         def slurper = new JsonSlurper()
         def result = slurper.parseText(buff.readLine())
         log.error "Response  - " + result 
+        
         
         if (action == "CRT") {
             log.error "action setting field  - " + action 
