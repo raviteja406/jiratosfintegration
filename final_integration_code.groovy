@@ -41,14 +41,7 @@ def init() {
     def changeHistoryManager = ComponentAccessor.getChangeHistoryManager()
 	def changeItems = changeHistoryManager.getAllChangeItems(issue)
    
-	if (changeItems?.size() > 0) {
-    	def userUtil = ComponentAccessor.getUserUtil()
-    	def userkey = changeItems.sort(false).last().getUserKey()
-        if( userkey != "snintegration" )
-			sync_with_snow(props, getActionType())
-        else 
-            log.error "action not allowed for "+userkey
-    }
+	sync_with_snow(props, getActionType())
 }
 
 /* <<<These API signatures will change>>>

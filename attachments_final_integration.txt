@@ -25,8 +25,15 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
-//getActionType()
-init();
+
+ def changeHistoryManager = ComponentAccessor.getChangeHistoryManager()
+	def changeItems = changeHistoryManager.getAllChangeItems(issue)
+	
+   
+	if (changeItems?.size() > 0) {    	
+            log.error "action not allowed for "+changeItems
+ }
+//init();
 
 def init() {
 
@@ -37,8 +44,18 @@ def init() {
 
     def log = Logger.getLogger(props.getProperty('LOG_FILE_PATH'))
     log.setLevel(Level.ERROR)
-
-    sync_with_snow(props, getActionType())
+    
+    def changeHistoryManager = ComponentAccessor.getChangeHistoryManager()
+	def changeItems = changeHistoryManager.getAllChangeItems(issue)
+   
+	if (changeItems?.size() > 0) {
+    	def userUtil = ComponentAccessor.getUserUtil()
+    	def userkey = changeItems.sort(false).last().getUserKey()
+        if( userkey != "snintegration" )
+			sync_with_snow(props, getActionType())
+        else 
+            log.error "action not allowed for "+userkey
+    }
 }
 
 /* <<<These API signatures will change>>>
@@ -77,7 +94,7 @@ def sync_with_snow(def props, def action) {
         connection.setRequestProperty("Accept", "application/json");
         connection.doOutput = true
         def writer = new OutputStreamWriter(connection.outputStream)
-        writer.write(build_req(issue_id));
+        writer.write(build_req(issue_id,action));
         writer.flush()
         writer.close()
         connection.connect()
@@ -92,20 +109,23 @@ def sync_with_snow(def props, def action) {
         // Extracting details of SNOW response
         def slurper = new JsonSlurper()
         def result = slurper.parseText(buff.readLine())
-        log.error "Response  - " + result    
+        log.error "Response  - " + result 
+        
         
         if (action == "CRT") {
-            sendAttachments(props, result)
-            setCustomFields(result, issue, props)
+            log.error "action setting field  - " + action 
+            setCustomFields(result, issue, props,action)
+			sendAttachments(props, result)
         }
 		
         if (action == "SRCH") {
-            setCustomFields(result, issue, props)
+            log.error "action setting field  - " + action 
+            setCustomFields(result, issue, props,action)
             sendAttachments(props, result)
             sync_with_snow(props, "UPD")            
         }
         //return connection.getResponseCode().toString()
-    } else {
+    }else {
         log.error("JIRA-SNOW: ERROR: Response:" + connection.getResponseMessage())
         //return connection.getResponseCode().toString()
     }
@@ -119,19 +139,29 @@ def sync_with_snow(def props, def action) {
 *					 issue: This Will be issue key for which response has to be updated.
 */
 
-def setCustomFields(def result, def issue, def props) {
+def setCustomFields(def result, def issue, def props,def action) {
 
     log.error "setcustom fields"
     IssueChangeHolder changeHolder = new DefaultIssueChangeHolder();
     labelManager = ComponentManager.getComponentInstanceOfType(LabelManager.class)
 
-    def snow_etask_id = "customfield_18982";
+    def snow_etask_number = "customfield_18982";
+	def snow_etask_sys_id = "customfield_19286";
 
     def customFieldManager = ComponentAccessor.getCustomFieldManager()
-    def labelSet = new HashSet()
+    def labelSet_inc_number = new HashSet()
+	def labelSet_inc_sys_id = new HashSet()
+
+    if( action == "SRCH"){	//SRCH gets a different response
+    	for(int i=0; i < result.incidents.size(); i++){
+     		labelSet_inc_number.add(result.incidents.number[i])
+			labelSet_inc_sys_id.add(result.incidents.sys_id[i])
+    	}		
+    }
     
-    for(int i=0; i < result.incidents.size(); i++){
-     	labelSet.add(result.incidents.number[i])   
+    if( action == "CRT"){    	
+		labelSet_inc_number.add(result.inc_number)
+		labelSet_inc_sys_id.add(result.inc_sys_id)
     }
 
     def componentManager = ComponentManager.getInstance()
@@ -139,10 +169,13 @@ def setCustomFields(def result, def issue, def props) {
     def user = authContext.getUser()
 
     //Add label
-    labelManager.setLabels(user.getDirectoryUser(), issue.id, 19180, labelSet, false, false)
+    labelManager.setLabels(user.getDirectoryUser(), issue.id, 19180, labelSet_inc_number, false, false)
+    labelManager.setLabels(user.getDirectoryUser(), issue.id, 19287, labelSet_inc_sys_id, false, false)
 
-    def cf_snow_etask_id = customFieldManager.getCustomFieldObject(snow_etask_id);
-    cf_snow_etask_id.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_etask_id), result.number), changeHolder);
+    def cf_snow_etask_number = customFieldManager.getCustomFieldObject(snow_etask_number);
+	def cf_snow_etask_sys_id = customFieldManager.getCustomFieldObject(snow_etask_sys_id);
+    cf_snow_etask_number.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_etask_number), result.number), changeHolder);
+	cf_snow_etask_sys_id.updateValue(null, issue, new ModifiedValue(issue.getCustomFieldValue(cf_snow_etask_sys_id), result.sys_id), changeHolder);
 }
 
 /* <<<These API signatures will change>>>
@@ -153,7 +186,7 @@ def setCustomFields(def result, def issue, def props) {
 *					 issue: This Will be issue key for which response has to be updated.
 */
 
-def build_req(def issueKey) {
+def build_req(def issueKey,def action) {
 
     def customFieldManager = ComponentAccessor.getCustomFieldManager()
 
@@ -173,7 +206,7 @@ def build_req(def issueKey) {
     def root = json jira_id: issueKey.getKey(), 
         			description: issueKey.getDescription(), 
         			ticket_priority: etp_priority.toString(), 
-        			ActionType: getActionType(),
+        			ActionType: action,
         			u_type: issue.getIssueTypeObject().getName(),
         			state: issue.getStatusObject().getName(),
         			summary: issueKey.getSummary(), 
@@ -187,7 +220,7 @@ def build_req(def issueKey) {
 
 def getActionType() {
     def action_type
-    def sn_etask_sys_id = "customfield_18982"
+    def sn_etask_sys_id = "customfield_19286" //servicenow etask sys id
 
     labelManager = ComponentManager.getComponentInstanceOfType(LabelManager.class)
     def labelSet = labelManager.getLabels(issue.id, 19180)
@@ -206,7 +239,6 @@ def getActionType() {
 
     return action_type
 }
-
 def sendAttachments(def props, def response) {
 
     def passwd = props.getProperty('passwd');

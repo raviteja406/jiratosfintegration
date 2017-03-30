@@ -1,0 +1,122 @@
+import org.ofbiz.core.entity.GenericValue
+import com.atlassian.jira.component.ComponentAccessor
+import com.atlassian.jira.ComponentManager
+import com.atlassian.jira.issue.fields.CustomField;
+import com.atlassian.jira.issue.CustomFieldManager;
+import com.atlassian.jira.issue.Issue
+import com.atlassian.jira.issue.ModifiedValue
+import com.atlassian.jira.issue.MutableIssue
+import com.atlassian.jira.issue.util.DefaultIssueChangeHolder
+import com.atlassian.jira.issue.util.IssueChangeHolder
+import com.opensymphony.workflow.InvalidInputException
+import org.apache.commons.codec.binary.Base64;
+import java.net.*;
+import groovy.json.JsonSlurper;
+import groovy.json.JsonBuilder;
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
+import org.apache.log4j.Category
+import org.apache.commons.io.IOUtils;
+import com.atlassian.jira.util.io.InputStreamConsumer;
+import com.atlassian.jira.util.PathUtils
+import java.nio.charset.StandardCharsets
+import com.atlassian.jira.issue.label.LabelManager
+import org.springframework.util.StringUtils
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+
+log.error "Script started"
+def attachmentIds = []
+URLConnection connection;
+//Reading from properties file
+Properties props = new Properties()
+File propsFile = new File('/data/JIRA6/atlassian-jira-6.4.12/conf/jirasnowconfig.properties')
+props.load(propsFile.newDataInputStream())
+
+List changeItems = event.getChangeLog()?.getRelated("ChildChangeItem")
+changeItems.each { GenericValue gv ->
+    if (gv["field"] == "Attachment" && gv["newvalue"]) {
+        attachmentIds.add(gv["newvalue"])
+        attachmentIds.each { attachmentId ->
+            def attachment = issue.attachments.find { def attachment ->
+                attachment.id == new Long(attachmentId)
+            }
+			send_attachments(attachment,props)
+        }
+    }
+}
+
+def send_attachments(def attachment,def props){
+
+    log.error "Entered for loop has attachments for event only "
+    log.error "Entered for loop has attachments for event - "+attachment.getFilename()
+	
+	def user = props.getProperty('user');
+    def passwd = props.getProperty('passwd');
+	def snow_etask_sys_id = "customfield_19286";
+	def customFieldManager = ComponentAccessor.getCustomFieldManager()
+	def cf_snow_etask_sys_id = customFieldManager.getCustomFieldObject(snow_etask_sys_id);
+	def etask_sys_id = issue.getCustomFieldValue(cf_snow_etask_sys_id)	    
+    log.error "sending attachments"
+    
+    FileInputStream fis;
+    int size = 0;
+    byte[] buffer;
+    def encodeddata; //byte array
+    def str_encodeddata; //string
+    DataOutputStream wr;
+	
+	String filePath = PathUtils.joinPaths(ComponentAccessor.getAttachmentPathManager().getDefaultAttachmentPath(), issue.getProjectObject().getKey(), issue.getKey(), attachment.getId().toString());
+        File file = new File(filePath);
+	
+    try {
+        log.error "Entered try block"
+        URL url;
+        URLParam = props.getProperty('sn_attachment_url')
+        log.error "try block -intial url "+URLParam
+        URLParam = URLParam + etask_sys_id + "&file_name=" + attachment.getFilename()
+        log.error "URL################################# - " + URLParam
+        url = new URL(URLParam);
+        def authString = user + ":" + passwd;
+        byte[] authEncBytes = Base64.encodeBase64(authString.getBytes());
+        String authStringEnc = new String(authEncBytes);
+		
+        connection = url.openConnection();
+        connection.setRequestProperty("Authorization", "Basic " + authStringEnc);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setDoInput(true);
+
+        def mimeType = connection.guessContentTypeFromName(attachment.getFilename());
+
+        connection.setRequestProperty("Content-Type", mimeType);
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Content-Length", Integer.toString(str_encodeddata.toString().getBytes().length));
+
+        buffer = new byte[file.length()];
+        fis = new FileInputStream(file);
+
+        int read;
+        while ((read = fis.read(buffer)) != -1) {
+            connection.getOutputStream().write(buffer, 0, read);
+        }
+
+        encodeddata = Base64.encodeBase64(buffer);
+        str_encodeddata = new String(buffer);
+        fis.close();
+
+        wr = new DataOutputStream(connection.getOutputStream());
+        wr.writeBytes(str_encodeddata);
+        wr.flush();
+        wr.close();
+        connection.connect();
+    } catch (Exception e) {
+        log.error "Exception while send" + e
+    }
+
+    if ((connection.getResponseCode().toString() != props.getProperty('CREATED'))) {
+        log.error "response on attachments " + connection.getResponseCode()
+    }
+
+}
